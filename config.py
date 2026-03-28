@@ -4,6 +4,9 @@ Update cookies/mirrors here when they rotate.
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ============================================================
 # CONNECTION SETTINGS
@@ -12,10 +15,10 @@ import os
 BASE_URL = os.environ.get("XBET_BASE_URL", "https://1xbet.tz")
 
 COOKIES = {
-    "SESSION": "3a71ecea7f82b99e161787674eb53843",
-    "PAY_SESSION": "ad3a87278f30549fcecc90fa3b2ebd0c",
-    "che_g": "35b62414-bab2-424e-b711-615ea2d48aa3",
-    "auid": "W7rP4mmu0u8cv0qxBHr/Ag==",
+    "SESSION": os.environ.get("XBET_SESSION", ""),
+    "PAY_SESSION": os.environ.get("XBET_PAY_SESSION", ""),
+    "che_g": os.environ.get("XBET_CHE_G", ""),
+    "auid": os.environ.get("XBET_AUID", ""),
     "lng": "en",
     "application_locale": "en",
     "coefview": "0",
@@ -63,7 +66,7 @@ DB_PATH = os.environ.get("DB_PATH", "odds_tracker.db")
 # API-BASKETBALL (for game results)
 # ============================================================
 
-API_BASKETBALL_KEY = os.environ.get("API_BASKETBALL_KEY", "925545bb2c5dd321229ab5ffedb10941")
+API_BASKETBALL_KEY = os.environ.get("API_BASKETBALL_KEY", "")
 API_BASKETBALL_BASE = "https://v1.basketball.api-sports.io"
 
 # How often to check for results (seconds)
