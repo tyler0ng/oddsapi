@@ -504,22 +504,18 @@ def get_closing_line_vs_result(conn, league_name=None):
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         -- Get the closing main-line Total Over (pre-match only)
+        -- Pick the line with odds closest to 1.90 (even money) at the latest timestamp,
+        -- since 1xBet's isCenter flag is unreliable.
         LEFT JOIN (
-            SELECT os.game_id, os.line, os.odds
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Total'
-              AND os.market_type = 9          -- Over
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MAX(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Total'
-                    AND os2.market_type = 9
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line, odds FROM (
+                SELECT os.game_id, os.line, os.odds,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Total'
+                  AND os.market_type = 9
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
     """
     params = []
@@ -553,21 +549,15 @@ def get_closing_line_handicap_vs_result(conn, league_name=None):
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT os.game_id, os.line, os.odds
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Handicap'
-              AND os.market_type = 7          -- Home Handicap
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MAX(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Handicap'
-                    AND os2.market_type = 7
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line, odds FROM (
+                SELECT os.game_id, os.line, os.odds,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Handicap'
+                  AND os.market_type = 7
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
     """
     params = []
@@ -606,21 +596,15 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT os.game_id, os.line, os.odds
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Home Total'
-              AND os.market_type = 11
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MAX(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Home Total'
-                    AND os2.market_type = 11
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line, odds FROM (
+                SELECT os.game_id, os.line, os.odds,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Home Total'
+                  AND os.market_type = 11
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
     """
@@ -652,21 +636,15 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT os.game_id, os.line, os.odds
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Away Total'
-              AND os.market_type = 13
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MAX(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Away Total'
-                    AND os2.market_type = 13
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line, odds FROM (
+                SELECT os.game_id, os.line, os.odds,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Away Total'
+                  AND os.market_type = 13
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
     """
@@ -710,38 +688,26 @@ def get_clv_analysis(conn, league_name=None):
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT os.game_id, os.line, os.odds
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Total'
-              AND os.market_type = 9
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MIN(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Total'
-                    AND os2.market_type = 9
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line, odds FROM (
+                SELECT os.game_id, os.line, os.odds,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at ASC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Total'
+                  AND os.market_type = 9
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) opening ON opening.game_id = gr.game_id
         LEFT JOIN (
-            SELECT os.game_id, os.line, os.odds
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Total'
-              AND os.market_type = 9
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MAX(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Total'
-                    AND os2.market_type = 9
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line, odds FROM (
+                SELECT os.game_id, os.line, os.odds,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Total'
+                  AND os.market_type = 9
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE opening.line IS NOT NULL AND closing.line IS NOT NULL
     """
@@ -774,21 +740,15 @@ def get_league_ou_bias(conn):
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT os.game_id, os.line
-            FROM odds_snapshots os
-            WHERE os.market_group = 'Total'
-              AND os.market_type = 9
-              AND os.is_main_line = 1
-              AND os.is_prematch = 1
-              AND os.scraped_at = (
-                  SELECT MAX(os2.scraped_at)
-                  FROM odds_snapshots os2
-                  WHERE os2.game_id = os.game_id
-                    AND os2.market_group = 'Total'
-                    AND os2.market_type = 9
-                    AND os2.is_main_line = 1
-                    AND os2.is_prematch = 1
-              )
+            SELECT game_id, line FROM (
+                SELECT os.game_id, os.line,
+                       ROW_NUMBER() OVER (PARTITION BY os.game_id
+                           ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
+                FROM odds_snapshots os
+                WHERE os.market_group = 'Total'
+                  AND os.market_type = 9
+                  AND os.is_prematch = 1
+            ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
         GROUP BY g.league_name
@@ -817,7 +777,6 @@ def get_hours_before_tipoff_patterns(conn, league_name=None):
             JOIN games g ON g.id = os.game_id
             WHERE os.market_group = 'Total'
               AND os.market_type = 9
-              AND os.is_main_line = 1
               AND os.is_prematch = 1
               AND g.start_time IS NOT NULL
     """
@@ -855,8 +814,7 @@ def get_clock_hour_patterns(conn, league_name=None):
             COUNT(DISTINCT g.league_name) AS leagues
         FROM odds_snapshots os
         JOIN games g ON g.id = os.game_id
-        WHERE os.is_main_line = 1
-          AND os.is_prematch = 1
+        WHERE os.is_prematch = 1
     """
     params = []
     if league_name:
