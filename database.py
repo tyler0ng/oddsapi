@@ -503,7 +503,7 @@ def get_closing_line_vs_result(conn, league_name=None):
             gr.status
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
-        -- Get the closing main-line Total Over (pre-match only)
+        -- Get the closing main-line Total Over
         -- Pick the line with odds closest to 1.90 (even money) at the latest timestamp,
         -- since 1xBet's isCenter flag is unreliable.
         LEFT JOIN (
@@ -514,7 +514,6 @@ def get_closing_line_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
     """
@@ -556,7 +555,6 @@ def get_closing_line_handicap_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Handicap'
                   AND os.market_type = 7
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
     """
@@ -603,7 +601,6 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Home Total'
                   AND os.market_type = 11
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
@@ -643,7 +640,6 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Away Total'
                   AND os.market_type = 13
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
@@ -695,7 +691,6 @@ def get_clv_analysis(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) opening ON opening.game_id = gr.game_id
         LEFT JOIN (
@@ -706,7 +701,6 @@ def get_clv_analysis(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE opening.line IS NOT NULL AND closing.line IS NOT NULL
@@ -747,7 +741,6 @@ def get_league_ou_bias(conn):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
-                  AND os.is_prematch = 1
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
@@ -777,7 +770,6 @@ def get_hours_before_tipoff_patterns(conn, league_name=None):
             JOIN games g ON g.id = os.game_id
             WHERE os.market_group = 'Total'
               AND os.market_type = 9
-              AND os.is_prematch = 1
               AND g.start_time IS NOT NULL
     """
     params = []
@@ -814,11 +806,10 @@ def get_clock_hour_patterns(conn, league_name=None):
             COUNT(DISTINCT g.league_name) AS leagues
         FROM odds_snapshots os
         JOIN games g ON g.id = os.game_id
-        WHERE os.is_prematch = 1
     """
     params = []
     if league_name:
-        query += " AND g.league_name = ?"
+        query += " WHERE g.league_name = ?"
         params.append(league_name)
 
     query += """
