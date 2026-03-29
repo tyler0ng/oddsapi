@@ -27,7 +27,7 @@ Usage:
 
 import sys
 from database import (
-    init_db, get_db, get_latest_odds, get_line_history,
+    get_db, get_latest_odds, get_line_history,
     get_upcoming_games, get_db_stats, get_league_summary,
     get_closing_line_vs_result, get_closing_line_handicap_vs_result,
     get_closing_team_totals_vs_result,
@@ -550,7 +550,9 @@ def cmd_time_patterns(league=None):
 # ============================================================
 
 if __name__ == "__main__":
-    init_db()
+    # Skip init_db() — query.py is read-only and init_db runs migrations
+    # that require write locks, which fail when the scheduler is running.
+    pass
 
     if len(sys.argv) < 2:
         print(__doc__)
