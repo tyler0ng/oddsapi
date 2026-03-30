@@ -312,10 +312,16 @@ def cmd_accuracy_spread(league=None):
         print(f"  Away covers: {away_covers}/{total} ({away_covers/total*100:.0f}%)")
 
 
-def cmd_accuracy_team_totals(league=None):
+def cmd_accuracy_team_totals(league=None, sort=None):
     """Closing team total line vs actual team score, with per-league averages."""
+    sort_options = {
+        'delta': 'ABS(delta) DESC',
+        'score': 'actual_score DESC',
+        'league': 'league_name, ext_game_id, side',
+    }
+    sort_order = sort_options.get(sort, 'league_name, ext_game_id, side')
     with get_db() as conn:
-        rows = get_closing_team_totals_vs_result(conn, league)
+        rows = get_closing_team_totals_vs_result(conn, league, sort_order=sort_order)
 
     if not rows:
         print("  No results with closing team total lines yet.")
@@ -598,8 +604,14 @@ if __name__ == "__main__":
         cmd_accuracy(league)
 
     elif cmd == "accuracy-team-totals":
-        league = sys.argv[2] if len(sys.argv) > 2 else None
-        cmd_accuracy_team_totals(league)
+        league = None
+        sort = None
+        for arg in sys.argv[2:]:
+            if arg.startswith("--sort="):
+                sort = arg.split("=", 1)[1]
+            elif league is None:
+                league = arg
+        cmd_accuracy_team_totals(league, sort=sort)
 
     elif cmd == "accuracy-spread":
         league = sys.argv[2] if len(sys.argv) > 2 else None

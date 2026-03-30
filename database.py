@@ -514,6 +514,13 @@ def get_closing_line_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
+                  AND os.line >= (
+                      SELECT MAX(os2.line) * 0.5
+                      FROM odds_snapshots os2
+                      WHERE os2.game_id = os.game_id
+                        AND os2.market_group = 'Total'
+                        AND os2.market_type = 9
+                  )
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
     """
@@ -567,7 +574,7 @@ def get_closing_line_handicap_vs_result(conn, league_name=None):
     return conn.execute(query, params).fetchall()
 
 
-def get_closing_team_totals_vs_result(conn, league_name=None):
+def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league_name, ext_game_id, side"):
     """
     Compare closing team total line vs actual team score.
     Returns rows for both home and away team totals.
@@ -601,6 +608,13 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Home Total'
                   AND os.market_type = 11
+                  AND os.line >= (
+                      SELECT MAX(os2.line) * 0.5
+                      FROM odds_snapshots os2
+                      WHERE os2.game_id = os.game_id
+                        AND os2.market_group = 'Home Total'
+                        AND os2.market_type = 11
+                  )
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
@@ -640,6 +654,13 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Away Total'
                   AND os.market_type = 13
+                  AND os.line >= (
+                      SELECT MAX(os2.line) * 0.5
+                      FROM odds_snapshots os2
+                      WHERE os2.game_id = os.game_id
+                        AND os2.market_group = 'Away Total'
+                        AND os2.market_type = 13
+                  )
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
@@ -648,7 +669,7 @@ def get_closing_team_totals_vs_result(conn, league_name=None):
         query += " AND g.league_name = ?"
         params.append(league_name)
 
-    query += " ORDER BY league_name, ext_game_id, side"
+    query += f" ORDER BY {sort_order}"
     return conn.execute(query, params).fetchall()
 
 
@@ -691,6 +712,13 @@ def get_clv_analysis(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
+                  AND os.line >= (
+                      SELECT MAX(os2.line) * 0.5
+                      FROM odds_snapshots os2
+                      WHERE os2.game_id = os.game_id
+                        AND os2.market_group = 'Total'
+                        AND os2.market_type = 9
+                  )
             ) WHERE rn = 1
         ) opening ON opening.game_id = gr.game_id
         LEFT JOIN (
@@ -701,6 +729,13 @@ def get_clv_analysis(conn, league_name=None):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
+                  AND os.line >= (
+                      SELECT MAX(os2.line) * 0.5
+                      FROM odds_snapshots os2
+                      WHERE os2.game_id = os.game_id
+                        AND os2.market_group = 'Total'
+                        AND os2.market_type = 9
+                  )
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE opening.line IS NOT NULL AND closing.line IS NOT NULL
@@ -741,6 +776,13 @@ def get_league_ou_bias(conn):
                 FROM odds_snapshots os
                 WHERE os.market_group = 'Total'
                   AND os.market_type = 9
+                  AND os.line >= (
+                      SELECT MAX(os2.line) * 0.5
+                      FROM odds_snapshots os2
+                      WHERE os2.game_id = os.game_id
+                        AND os2.market_group = 'Total'
+                        AND os2.market_type = 9
+                  )
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
@@ -770,6 +812,13 @@ def get_hours_before_tipoff_patterns(conn, league_name=None):
             JOIN games g ON g.id = os.game_id
             WHERE os.market_group = 'Total'
               AND os.market_type = 9
+              AND os.line >= (
+                  SELECT MAX(os2.line) * 0.5
+                  FROM odds_snapshots os2
+                  WHERE os2.game_id = os.game_id
+                    AND os2.market_group = 'Total'
+                    AND os2.market_type = 9
+              )
               AND g.start_time IS NOT NULL
     """
     params = []
