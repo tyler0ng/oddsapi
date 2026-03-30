@@ -579,7 +579,7 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
     Compare closing team total line vs actual team score.
     Returns rows for both home and away team totals.
     """
-    query = """
+    inner = """
         SELECT
             g.home_team,
             g.away_team,
@@ -621,10 +621,10 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
     """
     params = []
     if league_name:
-        query += " AND g.league_name = ?"
+        inner += " AND g.league_name = ?"
         params.append(league_name)
 
-    query += """
+    inner += """
         UNION ALL
         SELECT
             g.home_team,
@@ -666,10 +666,10 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
         WHERE closing.line IS NOT NULL
     """
     if league_name:
-        query += " AND g.league_name = ?"
+        inner += " AND g.league_name = ?"
         params.append(league_name)
 
-    query += f" ORDER BY {sort_order}"
+    query = f"SELECT * FROM ({inner}) ORDER BY {sort_order}"
     return conn.execute(query, params).fetchall()
 
 
