@@ -523,10 +523,11 @@ def get_closing_line_vs_result(conn, league_name=None):
                   )
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
+        WHERE (SELECT COUNT(*) FROM odds_snapshots os3 WHERE os3.game_id = g.id) >= 5
     """
     params = []
     if league_name:
-        query += " WHERE g.league_name = ?"
+        query += " AND g.league_name = ?"
         params.append(league_name)
 
     query += " ORDER BY gr.fetched_at DESC"
@@ -564,10 +565,11 @@ def get_closing_line_handicap_vs_result(conn, league_name=None):
                   AND os.market_type = 7
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
+        WHERE (SELECT COUNT(*) FROM odds_snapshots os3 WHERE os3.game_id = g.id) >= 5
     """
     params = []
     if league_name:
-        query += " WHERE g.league_name = ?"
+        query += " AND g.league_name = ?"
         params.append(league_name)
 
     query += " ORDER BY gr.fetched_at DESC"
@@ -618,6 +620,7 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
+          AND (SELECT COUNT(*) FROM odds_snapshots os3 WHERE os3.game_id = g.id) >= 5
     """
     params = []
     if league_name:
@@ -664,6 +667,7 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
+          AND (SELECT COUNT(*) FROM odds_snapshots os3 WHERE os3.game_id = g.id) >= 5
     """
     if league_name:
         inner += " AND g.league_name = ?"
@@ -739,6 +743,7 @@ def get_clv_analysis(conn, league_name=None):
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE opening.line IS NOT NULL AND closing.line IS NOT NULL
+          AND (SELECT COUNT(*) FROM odds_snapshots os3 WHERE os3.game_id = g.id) >= 5
     """
     params = []
     if league_name:
@@ -786,6 +791,7 @@ def get_league_ou_bias(conn):
             ) WHERE rn = 1
         ) closing ON closing.game_id = gr.game_id
         WHERE closing.line IS NOT NULL
+          AND (SELECT COUNT(*) FROM odds_snapshots os3 WHERE os3.game_id = g.id) >= 5
         GROUP BY g.league_name
         HAVING total_games >= 3
         ORDER BY total_games DESC
