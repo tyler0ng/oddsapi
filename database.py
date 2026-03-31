@@ -606,7 +606,8 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
                 WHEN gr.home_score < closing.line THEN 'UNDER'
                 ELSE 'PUSH'
             END AS result,
-            gr.status
+            gr.status,
+            (SELECT COUNT(*) FROM odds_snapshots os4 WHERE os4.game_id = g.id) AS snapshots
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
@@ -653,7 +654,8 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
                 WHEN gr.away_score < closing.line THEN 'UNDER'
                 ELSE 'PUSH'
             END AS result,
-            gr.status
+            gr.status,
+            (SELECT COUNT(*) FROM odds_snapshots os4 WHERE os4.game_id = g.id) AS snapshots
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (

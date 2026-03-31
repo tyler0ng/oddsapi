@@ -328,8 +328,8 @@ def cmd_accuracy_team_totals(league=None, sort=None):
         return
 
     print(f"\n  CLOSING LINE vs ACTUAL RESULT (Team Totals)")
-    print(f"  {'Team':<25} {'Side':<5} {'Line':>7} {'Actual':>7} {'Delta':>7} {'Result':>7} {'League'}")
-    print(f"  {'─'*25} {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*25}")
+    print(f"  {'Team':<25} {'Side':<5} {'Line':>7} {'Actual':>7} {'Delta':>7} {'Result':>7} {'Snaps':>6} {'League'}")
+    print(f"  {'─'*25} {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*6} {'─'*25}")
 
     # Collect per-league stats
     league_stats = {}
@@ -342,7 +342,7 @@ def cmd_accuracy_team_totals(league=None, sort=None):
         team = r['team'][:25]
         delta = f"{r['delta']:+.1f}" if r['delta'] is not None else "N/A"
         print(f"  {team:<25} {r['side']:<5} {r['closing_line']:>7.1f} {r['actual_score']:>7} "
-              f"{delta:>7} {r['result']:>7} {r['league_name']}")
+              f"{delta:>7} {r['result']:>7} {r['snapshots']:>6} {r['league_name']}")
 
         if r['result'] == 'OVER':
             over_count += 1
