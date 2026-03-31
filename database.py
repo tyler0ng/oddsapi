@@ -430,13 +430,20 @@ def store_game_result(conn, game_id, home_score, away_score, quarters=None, stat
     quarters = {"home_q1": 25, "away_q1": 30, ...} (optional)
     Returns True if stored, False if already exists.
     """
-    # Check if result already stored
+    # Check if result already stored for this game
     existing = conn.execute(
         "SELECT id FROM game_results WHERE game_id = ?", (game_id,)
     ).fetchone()
-
     if existing:
         return False
+
+    # Prevent the same real-world result from being matched to duplicate game entries
+    if api_game_id:
+        dupe = conn.execute(
+            "SELECT id FROM game_results WHERE api_game_id = ?", (api_game_id,)
+        ).fetchone()
+        if dupe:
+            return False
 
     q = quarters or {}
     total_points = home_score + away_score
