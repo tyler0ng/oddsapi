@@ -16,6 +16,7 @@ Usage:
   python query.py accuracy "South Korea KBL"  # totals accuracy for one league
   python query.py accuracy-team-totals      # closing team total line vs actual team score
   python query.py accuracy-team-totals "South Korea KBL"  # team totals for one league
+  python query.py accuracy-team-totals --sort=stale       # rows with stalest closing lines first
   python query.py accuracy-spread           # closing line vs actual result (handicap)
   python query.py accuracy-spread "NBA"     # handicap accuracy for one league
   python query.py clv                      # closing line value: opening vs closing vs result
@@ -26,6 +27,7 @@ Usage:
 """
 
 import sys
+from datetime import datetime
 from database import (
     get_db, get_latest_odds, get_line_history,
     get_upcoming_games, get_db_stats, get_league_summary,
@@ -318,6 +320,7 @@ def cmd_accuracy_team_totals(league=None, sort=None):
         'delta': 'ABS(delta) DESC',
         'score': 'actual_score DESC',
         'league': 'league_name, ext_game_id, side',
+        'stale': 'seconds_to_tip DESC',
     }
     sort_order = sort_options.get(sort, 'league_name, ext_game_id, side')
     with get_db() as conn:
@@ -328,8 +331,9 @@ def cmd_accuracy_team_totals(league=None, sort=None):
         return
 
     print(f"\n  CLOSING LINE vs ACTUAL RESULT (Team Totals)")
-    print(f"  {'Team':<25} {'Side':<5} {'Line':>7} {'Actual':>7} {'Delta':>7} {'Result':>7} {'Snaps':>6} {'League'}")
-    print(f"  {'─'*25} {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*6} {'─'*25}")
+    print(f"  {'Date':<10} {'Team':<22} {'Side':<5} {'Line':>7} {'Actual':>7} {'Delta':>7} "
+          f"{'Result':>7} {'Snaps':>6} {'ToTip':>6} {'League'}")
+    print(f"  {'─'*10} {'─'*22} {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*7} {'─'*6} {'─'*6} {'─'*25}")
 
     # Collect per-league stats
     league_stats = {}
@@ -337,12 +341,31 @@ def cmd_accuracy_team_totals(league=None, sort=None):
     under_count = 0
     push_count = 0
     total_delta = 0
+    stale_count = 0  # closing snap > 1h before tip
 
     for r in rows:
-        team = r['team'][:25]
+        team = r['team'][:22]
         delta = f"{r['delta']:+.1f}" if r['delta'] is not None else "N/A"
-        print(f"  {team:<25} {r['side']:<5} {r['closing_line']:>7.1f} {r['actual_score']:>7} "
-              f"{delta:>7} {r['result']:>7} {r['snapshots']:>6} {r['league_name']}")
+
+        # Hours between closing-line snap and tipoff (computed in SQL, UTC-safe)
+        hours_to_tip_str = "—"
+        is_stale = False
+        if r['seconds_to_tip'] is not None:
+            gap_h = r['seconds_to_tip'] / 3600
+            hours_to_tip_str = f"{gap_h:+.1f}h"
+            if gap_h > 1.0:
+                is_stale = True
+                stale_count += 1
+
+        # Format date from start_time
+        date_str = "—"
+        if r['start_time']:
+            date_str = datetime.utcfromtimestamp(r['start_time']).strftime("%m-%d %H:%M")
+
+        stale_mark = "!" if is_stale else " "
+        print(f"  {date_str:<10} {team:<22} {r['side']:<5} {r['closing_line']:>7.1f} "
+              f"{r['actual_score']:>7} {delta:>7} {r['result']:>7} {r['snapshots']:>6} "
+              f"{hours_to_tip_str:>6}{stale_mark}{r['league_name']}")
 
         if r['result'] == 'OVER':
             over_count += 1
@@ -380,6 +403,9 @@ def cmd_accuracy_team_totals(league=None, sort=None):
         print(f"    UNDER: {under_count} ({under_count/total*100:.0f}%)")
         print(f"    PUSH:  {push_count}")
         print(f"    Avg absolute delta: {avg_delta:.1f} points")
+        if stale_count:
+            print(f"    Stale closing lines (snap >1h before tip): {stale_count}/{total}  "
+                  f"(marked with '!' — not a true closing line)")
 
     # Per-league breakdown
     if len(league_stats) > 1 or not league:

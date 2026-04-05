@@ -207,11 +207,31 @@ def upsert_game(conn, ext_game_id, league_name, league_id, home_team, away_team,
     Insert a game if new, or update last_updated if it already exists.
     Fills in start_time if previously null. Advances game_status forward only.
     Returns the internal game ID.
+
+    Deduplication: if no row matches ext_game_id but one matches
+    (league_id, home_team, away_team, start_time), 1xBet has reissued the game
+    ID for the same matchup. We update the existing row's ext_game_id to the
+    new one so snapshots stay attached to the original game.
     """
-    # Try to find existing
+    # Try to find existing by ext_game_id
     row = conn.execute(
         "SELECT id, game_status FROM games WHERE ext_game_id = ?", (ext_game_id,)
     ).fetchone()
+
+    # Fallback: match by teams + start_time (1xBet reissued the game ID)
+    if not row and start_time is not None:
+        row = conn.execute(
+            """SELECT id, game_status FROM games
+               WHERE league_id = ? AND home_team = ? AND away_team = ?
+                 AND start_time = ?""",
+            (league_id, home_team, away_team, start_time)
+        ).fetchone()
+        if row:
+            # Point the existing row at the new ext_game_id (1xBet's current ID)
+            conn.execute(
+                "UPDATE games SET ext_game_id = ? WHERE id = ?",
+                (ext_game_id, row["id"])
+            )
 
     if row:
         # Determine new status: only advance forward (upcoming → live → finished)
@@ -587,6 +607,11 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
     """
     Compare closing team total line vs actual team score.
     Returns rows for both home and away team totals.
+
+    Also returns closing_snap_at (when the "closing" line was captured) and
+    start_time so callers can see how stale the closing line actually is —
+    big gaps mean the scraper stopped tracking the market before tipoff and
+    the captured line isn't a real closing line.
     """
     inner = """
         SELECT
@@ -594,12 +619,15 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
             g.away_team,
             g.league_name,
             g.ext_game_id,
+            g.start_time,
             'Home' AS side,
             g.home_team AS team,
             gr.home_score AS actual_score,
             gr.total_points,
             closing.line AS closing_line,
             closing.odds AS closing_over_odds,
+            closing.scraped_at AS closing_snap_at,
+            (g.start_time - CAST(strftime('%s', closing.scraped_at) AS INTEGER)) AS seconds_to_tip,
             gr.home_score - closing.line AS delta,
             CASE
                 WHEN gr.home_score > closing.line THEN 'OVER'
@@ -611,8 +639,8 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT game_id, line, odds FROM (
-                SELECT os.game_id, os.line, os.odds,
+            SELECT game_id, line, odds, scraped_at FROM (
+                SELECT os.game_id, os.line, os.odds, os.scraped_at,
                        ROW_NUMBER() OVER (PARTITION BY os.game_id
                            ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
                 FROM odds_snapshots os
@@ -642,12 +670,15 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
             g.away_team,
             g.league_name,
             g.ext_game_id,
+            g.start_time,
             'Away' AS side,
             g.away_team AS team,
             gr.away_score AS actual_score,
             gr.total_points,
             closing.line AS closing_line,
             closing.odds AS closing_over_odds,
+            closing.scraped_at AS closing_snap_at,
+            (g.start_time - CAST(strftime('%s', closing.scraped_at) AS INTEGER)) AS seconds_to_tip,
             gr.away_score - closing.line AS delta,
             CASE
                 WHEN gr.away_score > closing.line THEN 'OVER'
@@ -659,8 +690,8 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
         FROM game_results gr
         JOIN games g ON g.id = gr.game_id
         LEFT JOIN (
-            SELECT game_id, line, odds FROM (
-                SELECT os.game_id, os.line, os.odds,
+            SELECT game_id, line, odds, scraped_at FROM (
+                SELECT os.game_id, os.line, os.odds, os.scraped_at,
                        ROW_NUMBER() OVER (PARTITION BY os.game_id
                            ORDER BY os.scraped_at DESC, ABS(os.odds - 1.90) ASC) AS rn
                 FROM odds_snapshots os
