@@ -274,7 +274,8 @@ def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
 
     our_home = our_game["home_team"]
     our_away = our_game["away_team"]
-    our_start = our_game.get("start_time")
+    # sqlite3.Row doesn't support .get(); access directly (column exists, may be NULL)
+    our_start = our_game["start_time"] if "start_time" in our_game.keys() else None
     max_gap_s = max_time_gap_hours * 3600
 
     for api_game in api_games:
