@@ -258,19 +258,22 @@ def _api_game_unix_time(api_game):
 def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
     """
     Try to match one of our tracked games to an API-Basketball result.
-    Returns the best match above the threshold, or None.
+    Returns (best_match, score, swapped) — swapped=True means the API's
+    home team is our away team (and vice versa), so the caller must swap
+    the home/away scores before storing.
 
     When our_game has a start_time, API games more than max_time_gap_hours
     away are filtered out — prevents matching same-teams-different-day
-    games (e.g. teams that play back-to-back or repeat within a week).
+    games (e.g. home-and-away legs of a double round-robin).
     If our_game has no start_time, falls back to name-only matching.
     """
     # Skip junk entries that aren't real games
     if is_junk_game(our_game):
-        return None, 0
+        return None, 0, False
 
     best_match = None
     best_score = 0
+    best_swapped = False
 
     our_home = our_game["home_team"]
     our_away = our_game["away_team"]
@@ -298,15 +301,20 @@ def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
         swap_away_sim = team_similarity(our_away, api_home)
         swap_avg = (swap_home_sim + swap_away_sim) / 2
 
-        score = max(avg_sim, swap_avg)
+        # Track which orientation won
+        if swap_avg > avg_sim:
+            score, swapped = swap_avg, True
+        else:
+            score, swapped = avg_sim, False
 
         if score > best_score:
             best_score = score
             best_match = api_game
+            best_swapped = swapped
 
     if best_score >= threshold:
-        return best_match, best_score
-    return None, 0
+        return best_match, best_score, best_swapped
+    return None, 0, False
 
 
 # ============================================================
@@ -379,15 +387,33 @@ def fetch_results_for_pending_games():
                 g for g in all_api_games if g["api_game_id"] not in used_api_ids
             ]
 
-            result, score = match_game(game, available_api_games)
+            result, score, swapped = match_game(game, available_api_games)
 
             if result:
+                # When API's home is our away (swapped match), flip scores and
+                # quarters so they align with our game's home/away labels.
+                if swapped:
+                    home_score = result["away_score"]
+                    away_score = result["home_score"]
+                    q_in = result["quarters"] or {}
+                    quarters = {
+                        "home_q1": q_in.get("away_q1"), "away_q1": q_in.get("home_q1"),
+                        "home_q2": q_in.get("away_q2"), "away_q2": q_in.get("home_q2"),
+                        "home_q3": q_in.get("away_q3"), "away_q3": q_in.get("home_q3"),
+                        "home_q4": q_in.get("away_q4"), "away_q4": q_in.get("home_q4"),
+                        "home_ot": q_in.get("away_ot"), "away_ot": q_in.get("home_ot"),
+                    }
+                else:
+                    home_score = result["home_score"]
+                    away_score = result["away_score"]
+                    quarters = result["quarters"]
+
                 stored = store_game_result(
                     conn,
                     game_id=game["id"],
-                    home_score=result["home_score"],
-                    away_score=result["away_score"],
-                    quarters=result["quarters"],
+                    home_score=home_score,
+                    away_score=away_score,
+                    quarters=quarters,
                     status=result["status"],
                     api_game_id=result["api_game_id"],
                 )
@@ -395,9 +421,10 @@ def fetch_results_for_pending_games():
                 if stored:
                     matched += 1
                     used_api_ids.add(result["api_game_id"])
-                    total = result["home_score"] + result["away_score"]
-                    print(f"  [MATCHED] {game['home_team']} vs {game['away_team']}")
-                    print(f"    Score: {result['home_score']}-{result['away_score']} (total: {total})")
+                    total = home_score + away_score
+                    swap_note = " [home/away swapped]" if swapped else ""
+                    print(f"  [MATCHED] {game['home_team']} vs {game['away_team']}{swap_note}")
+                    print(f"    Score: {home_score}-{away_score} (total: {total})")
                     print(f"    Match confidence: {score:.0%}")
 
     print(f"\n[RESULTS] Stored {matched} new results")
