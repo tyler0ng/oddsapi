@@ -25,6 +25,17 @@ python results_fetcher.py        # fetch scores for games missing results
 python results_fetcher.py --test # test API-Basketball connection
 ```
 
+### Maintenance
+
+```bash
+python cleanup_duplicates.py         # audit duplicate game rows (dry run)
+python cleanup_duplicates.py --apply # merge duplicates into canonical row
+```
+
+1xBet reissues `ext_game_id` for the same matchup occasionally, creating duplicate
+`games` rows. `upsert_game` now catches this at insert-time (via `(teams, start_time)`
+lookup), but the cleanup script is useful as a periodic audit.
+
 ### Notifications
 
 ```bash
@@ -54,6 +65,7 @@ python query.py accuracy "South Korea KBL"       # totals for one league
 python query.py accuracy-team-totals             # team total line vs actual team score
 python query.py accuracy-team-totals "South Korea KBL"  # team totals for one league
 python query.py accuracy-team-totals --sort=delta       # sorted by biggest delta
+python query.py accuracy-team-totals --sort=stale       # rows with stalest closing snaps first
 python query.py accuracy-spread                  # handicap
 python query.py accuracy-spread "NBA"            # handicap for one league
 
@@ -72,7 +84,8 @@ python query.py time-patterns "NBA"              # time patterns for one league
 - `scheduler.py` — Main loop. Calls `run_cycle()` every 300s: discovers leagues, iterates games, stores odds. Sends Telegram alerts on errors via `notifier.py`.
 - `scraper.py` — HTTP layer. Uses `curl_cffi` with `impersonate="safari17_0"` to bypass TLS fingerprinting.
 - `database.py` — SQLite with WAL mode. Tables: `games`, `odds_snapshots`, `scraper_runs`, `scraper_run_leagues`, `game_results`. Deduplicates snapshots (only stores when odds change).
-- `results_fetcher.py` — Pulls final scores from API-Basketball (api-sports.io). Matches games via fuzzy team-name similarity.
+- `results_fetcher.py` — Pulls final scores from API-Basketball (api-sports.io). Matches games via fuzzy team-name similarity, with a ±12h time-proximity filter to avoid cross-matching home/away legs of the same fixture. Swaps home/away scores when the winning match is on swapped team orientation.
+- `cleanup_duplicates.py` — Audits / merges duplicate `games` rows created when 1xBet reissues `ext_game_id` for the same matchup.
 - `query.py` — Read-only CLI for inspecting data and running analysis.
 - `notifier.py` — Telegram alerts via `urllib.request`. No-op when `TELEGRAM_BOT_TOKEN` is empty.
 - `config.py` — All settings. Secrets loaded from `.env` via `python-dotenv`.
