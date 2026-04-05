@@ -242,10 +242,28 @@ def is_junk_game(game):
 # MATCHING
 # ============================================================
 
-def match_game(our_game, api_games, threshold=0.70):
+def _api_game_unix_time(api_game):
+    """Parse API-Basketball's ISO date field to a unix timestamp, or None."""
+    date_str = api_game.get("date")
+    if not date_str:
+        return None
+    try:
+        # Handles "2026-03-30T19:00:00+00:00" and trailing "Z"
+        s = date_str.replace("Z", "+00:00")
+        return int(datetime.fromisoformat(s).timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
     """
     Try to match one of our tracked games to an API-Basketball result.
     Returns the best match above the threshold, or None.
+
+    When our_game has a start_time, API games more than max_time_gap_hours
+    away are filtered out — prevents matching same-teams-different-day
+    games (e.g. teams that play back-to-back or repeat within a week).
+    If our_game has no start_time, falls back to name-only matching.
     """
     # Skip junk entries that aren't real games
     if is_junk_game(our_game):
@@ -256,8 +274,16 @@ def match_game(our_game, api_games, threshold=0.70):
 
     our_home = our_game["home_team"]
     our_away = our_game["away_team"]
+    our_start = our_game.get("start_time")
+    max_gap_s = max_time_gap_hours * 3600
 
     for api_game in api_games:
+        # Time-proximity filter (skip only when both sides have a timestamp)
+        if our_start:
+            api_ts = _api_game_unix_time(api_game)
+            if api_ts is not None and abs(api_ts - our_start) > max_gap_s:
+                continue
+
         api_home = api_game["home_team"]
         api_away = api_game["away_team"]
 
