@@ -427,8 +427,74 @@ def fetch_results_for_pending_games():
                     print(f"    Score: {home_score}-{away_score} (total: {total})")
                     print(f"    Match confidence: {score:.0%}")
 
+                    # Retag women's league games based on API-Basketball league info
+                    api_league = (result.get("league_name") or "").lower()
+                    our_league = game["league_name"] or ""
+                    if "women" in api_league and "women" not in our_league.lower():
+                        new_name = our_league + " Women"
+                        conn.execute(
+                            "UPDATE games SET league_name = ? WHERE id = ?",
+                            (new_name, game["id"]),
+                        )
+                        print(f"    Retagged → {new_name}")
+
     print(f"\n[RESULTS] Stored {matched} new results")
     return matched
+
+
+# ============================================================
+# RETAG WOMEN'S LEAGUES
+# ============================================================
+
+def retag_womens_leagues():
+    """
+    Retroactively check already-matched games against API-Basketball
+    and retag any that belong to a women's league.
+    Useful for fixing historical data where men's and women's games
+    were stored under the same league name (e.g., "Australia. NBL1").
+    """
+    print("\n[RETAG] Checking matched games for women's league classification...")
+
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT g.id, g.league_name, gr.api_game_id
+            FROM games g
+            JOIN game_results gr ON g.id = gr.game_id
+            WHERE gr.api_game_id IS NOT NULL
+              AND g.league_name NOT LIKE '%Women%'
+        """).fetchall()
+
+    if not rows:
+        print("  No games to check")
+        return 0
+
+    print(f"  Checking {len(rows)} games against API-Basketball...")
+
+    retagged = 0
+    with get_db() as conn:
+        for row in rows:
+            api_game_id = row["api_game_id"]
+
+            result = api_basketball_request("games", params={"id": str(api_game_id)})
+            if not result or len(result) == 0:
+                continue
+
+            game_data = result[0]
+            api_league = game_data.get("league", {}).get("name", "")
+
+            if "women" in api_league.lower():
+                new_name = row["league_name"] + " Women"
+                conn.execute(
+                    "UPDATE games SET league_name = ? WHERE id = ?",
+                    (new_name, row["id"]),
+                )
+                retagged += 1
+                print(f"  [RETAGGED] {row['league_name']} → {new_name} (api_game_id={api_game_id})")
+
+            time.sleep(0.5)  # Rate limit
+
+    print(f"\n[RETAG] Updated {retagged} games")
+    return retagged
 
 
 # ============================================================
@@ -446,6 +512,9 @@ if __name__ == "__main__":
         print(f"\nFound {len(leagues)} leagues:\n")
         for lg in sorted(leagues, key=lambda x: x["country"]):
             print(f"  {lg['country']:<25} {lg['name']:<40} ID: {lg['id']}")
+
+    elif "--retag" in sys.argv:
+        retag_womens_leagues()
 
     else:
         fetch_results_for_pending_games()
