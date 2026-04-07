@@ -13,6 +13,7 @@ Usage:
   python results_fetcher.py --leagues      # list available leagues on API-Basketball
 """
 
+import re
 import sys
 import time
 import requests
@@ -427,7 +428,7 @@ def fetch_results_for_pending_games():
                     print(f"    Score: {home_score}-{away_score} (total: {total})")
                     print(f"    Match confidence: {score:.0%}")
 
-                    # Retag women's league games based on API-Basketball league info
+                    # Retag based on API-Basketball league info
                     api_league = (result.get("league_name") or "").lower()
                     our_league = game["league_name"] or ""
                     if "women" in api_league and "women" not in our_league.lower():
@@ -437,6 +438,14 @@ def fetch_results_for_pending_games():
                             (new_name, game["id"]),
                         )
                         print(f"    Retagged → {new_name}")
+                    elif "women" not in api_league and "women" in our_league.lower():
+                        # 1xBet mislabeled a men's game as women's — fix it
+                        new_name = re.sub(r'\.?\s*Women$', '', our_league, flags=re.IGNORECASE).strip()
+                        conn.execute(
+                            "UPDATE games SET league_name = ? WHERE id = ?",
+                            (new_name, game["id"]),
+                        )
+                        print(f"    Retagged (men's) → {new_name}")
 
     print(f"\n[RESULTS] Stored {matched} new results")
     return matched
@@ -449,11 +458,11 @@ def fetch_results_for_pending_games():
 def retag_womens_leagues():
     """
     Retroactively check already-matched games against API-Basketball
-    and retag any that belong to a women's league.
-    Useful for fixing historical data where men's and women's games
-    were stored under the same league name (e.g., "Australia. NBL1").
+    and fix men/women classification. Handles both directions:
+    - Men's games mislabeled as Women's → strip "Women" suffix
+    - Women's games missing the label → add "Women" suffix
     """
-    print("\n[RETAG] Checking matched games for women's league classification...")
+    print("\n[RETAG] Checking matched games for men/women classification...")
 
     with get_db() as conn:
         rows = conn.execute("""
@@ -461,7 +470,6 @@ def retag_womens_leagues():
             FROM games g
             JOIN game_results gr ON g.id = gr.game_id
             WHERE gr.api_game_id IS NOT NULL
-              AND g.league_name NOT LIKE '%Women%'
         """).fetchall()
 
     if not rows:
@@ -481,15 +489,26 @@ def retag_womens_leagues():
 
             game_data = result[0]
             api_league = game_data.get("league", {}).get("name", "")
+            our_league = row["league_name"] or ""
+            is_api_women = "women" in api_league.lower()
+            is_our_women = "women" in our_league.lower()
 
-            if "women" in api_league.lower():
-                new_name = row["league_name"] + " Women"
+            if is_api_women and not is_our_women:
+                new_name = our_league + " Women"
                 conn.execute(
                     "UPDATE games SET league_name = ? WHERE id = ?",
                     (new_name, row["id"]),
                 )
                 retagged += 1
-                print(f"  [RETAGGED] {row['league_name']} → {new_name} (api_game_id={api_game_id})")
+                print(f"  [RETAGGED] {our_league} → {new_name} (api_game_id={api_game_id})")
+            elif not is_api_women and is_our_women:
+                new_name = re.sub(r'\.?\s*Women$', '', our_league, flags=re.IGNORECASE).strip()
+                conn.execute(
+                    "UPDATE games SET league_name = ? WHERE id = ?",
+                    (new_name, row["id"]),
+                )
+                retagged += 1
+                print(f"  [RETAGGED] {our_league} → {new_name} (api_game_id={api_game_id})")
 
             time.sleep(0.5)  # Rate limit
 
