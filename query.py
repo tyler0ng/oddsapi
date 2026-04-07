@@ -175,7 +175,7 @@ def cmd_coverage(league=None):
         """
         params = []
         if league:
-            query += " WHERE g.league_name = ?"
+            query += " WHERE g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
             params.append(league)
         query += """
             GROUP BY g.id
@@ -319,10 +319,10 @@ def cmd_accuracy_team_totals(league=None, sort=None):
     sort_options = {
         'delta': 'ABS(delta) DESC',
         'score': 'actual_score DESC',
-        'league': 'league_name, ext_game_id, side',
+        'league': 'league_id, ext_game_id, side',
         'stale': 'seconds_to_tip DESC',
     }
-    sort_order = sort_options.get(sort, 'league_name, ext_game_id, side')
+    sort_order = sort_options.get(sort, 'league_id, ext_game_id, side')
     with get_db() as conn:
         rows = get_closing_team_totals_vs_result(conn, league, sort_order=sort_order)
 
