@@ -428,18 +428,21 @@ def fetch_results_for_pending_games():
                     print(f"    Score: {home_score}-{away_score} (total: {total})")
                     print(f"    Match confidence: {score:.0%}")
 
-                    # Retag based on API-Basketball league info
-                    api_league = (result.get("league_name") or "").lower()
+                    # Retag men/women using team name markers (most reliable)
                     our_league = game["league_name"] or ""
-                    if "women" in api_league and "women" not in our_league.lower():
+                    home = game["home_team"] or ""
+                    away = game["away_team"] or ""
+                    teams_say_women = ("(Women)" in home or "(Wom" in home
+                                       or "(Women)" in away or "(Wom" in away)
+
+                    if teams_say_women and "women" not in our_league.lower():
                         new_name = our_league + " Women"
                         conn.execute(
                             "UPDATE games SET league_name = ? WHERE id = ?",
                             (new_name, game["id"]),
                         )
                         print(f"    Retagged → {new_name}")
-                    elif "women" not in api_league and "women" in our_league.lower():
-                        # 1xBet mislabeled a men's game as women's — fix it
+                    elif not teams_say_women and "women" in our_league.lower():
                         new_name = re.sub(r'\.?\s*Women$', '', our_league, flags=re.IGNORECASE).strip()
                         conn.execute(
                             "UPDATE games SET league_name = ? WHERE id = ?",
@@ -516,6 +519,57 @@ def retag_womens_leagues():
     return retagged
 
 
+def retag_by_team_names():
+    """
+    Fix men/women classification using team name markers.
+    1xBet appends "(Women)" to team names for women's games,
+    so we can use that as a reliable signal without API calls.
+
+    Fixes both directions:
+    - Team has "(Women)" but league doesn't → add Women to league
+    - Team has no "(Women)" but league says Women → strip Women from league
+    """
+    print("\n[RETAG] Fixing men/women classification using team names...")
+
+    with get_db() as conn:
+        # Women's teams in non-women leagues
+        women_in_mens = conn.execute("""
+            SELECT id, league_name, home_team, away_team FROM games
+            WHERE (home_team LIKE '%(Women)%' OR home_team LIKE '%(Wom%'
+                   OR away_team LIKE '%(Women)%' OR away_team LIKE '%(Wom%')
+              AND league_name NOT LIKE '%Women%'
+        """).fetchall()
+
+        fixed = 0
+        for row in women_in_mens:
+            new_name = row["league_name"] + " Women"
+            conn.execute("UPDATE games SET league_name = ? WHERE id = ?",
+                         (new_name, row["id"]))
+            fixed += 1
+
+        print(f"  Women's teams in non-women leagues: {fixed} fixed")
+
+        # Men's teams in women leagues
+        mens_in_womens = conn.execute("""
+            SELECT id, league_name, home_team, away_team FROM games
+            WHERE home_team NOT LIKE '%(Women)%' AND home_team NOT LIKE '%(Wom%'
+              AND away_team NOT LIKE '%(Women)%' AND away_team NOT LIKE '%(Wom%'
+              AND league_name LIKE '%Women%'
+        """).fetchall()
+
+        fixed2 = 0
+        for row in mens_in_womens:
+            new_name = re.sub(r'\.?\s*Women$', '', row["league_name"], flags=re.IGNORECASE).strip()
+            conn.execute("UPDATE games SET league_name = ? WHERE id = ?",
+                         (new_name, row["id"]))
+            fixed2 += 1
+
+        print(f"  Men's teams in women leagues: {fixed2} fixed")
+
+    print(f"\n[RETAG] Total: {fixed + fixed2} games retagged")
+    return fixed + fixed2
+
+
 # ============================================================
 # ENTRY POINTS
 # ============================================================
@@ -533,6 +587,9 @@ if __name__ == "__main__":
             print(f"  {lg['country']:<25} {lg['name']:<40} ID: {lg['id']}")
 
     elif "--retag" in sys.argv:
+        retag_by_team_names()
+
+    elif "--retag-api" in sys.argv:
         retag_womens_leagues()
 
     else:
