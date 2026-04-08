@@ -160,6 +160,11 @@ def normalize_name(name):
         return ""
     # Lowercase, strip common suffixes/prefixes
     n = name.lower().strip()
+    # Remove 1xBet women's markers: "(Women)", "(Wom)"
+    n = re.sub(r'\s*\(wom(?:en)?\)\s*', ' ', n).strip()
+    # Remove API-Basketball women's suffix: trailing " w"
+    if n.endswith(" w"):
+        n = n[:-2].strip()
     # Remove common suffixes that differ between sources
     for suffix in [" bc", " bk", " sk", " fc", " sc", " basket",
                    " basketball", " club", " team"]:
@@ -256,6 +261,23 @@ def _api_game_unix_time(api_game):
         return None
 
 
+def _is_women_xbet(home, away):
+    """Check if a 1xBet game is women's based on team name markers."""
+    h = home or ""
+    a = away or ""
+    return ("(Women)" in h or "(Wom" in h
+            or "(Women)" in a or "(Wom" in a)
+
+
+def _is_women_api(api_game):
+    """Check if an API-Basketball game is women's based on team names or league."""
+    home = api_game.get("home_team", "")
+    away = api_game.get("away_team", "")
+    league = api_game.get("league_name", "")
+    return (home.endswith(" W") or away.endswith(" W")
+            or "women" in league.lower())
+
+
 def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
     """
     Try to match one of our tracked games to an API-Basketball result.
@@ -267,6 +289,11 @@ def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
     away are filtered out — prevents matching same-teams-different-day
     games (e.g. home-and-away legs of a double round-robin).
     If our_game has no start_time, falls back to name-only matching.
+
+    Gender-aware: women's 1xBet games (team names with "(Women)") only
+    match women's API games (team names ending " W" or league contains
+    "women"), and vice versa. Prevents cross-matching men's/women's
+    results for the same club.
     """
     # Skip junk entries that aren't real games
     if is_junk_game(our_game):
@@ -278,11 +305,16 @@ def match_game(our_game, api_games, threshold=0.70, max_time_gap_hours=12):
 
     our_home = our_game["home_team"]
     our_away = our_game["away_team"]
+    our_women = _is_women_xbet(our_home, our_away)
     # sqlite3.Row doesn't support .get(); access directly (column exists, may be NULL)
     our_start = our_game["start_time"] if "start_time" in our_game.keys() else None
     max_gap_s = max_time_gap_hours * 3600
 
     for api_game in api_games:
+        # Gender filter — don't cross-match men's/women's
+        if _is_women_api(api_game) != our_women:
+            continue
+
         # Time-proximity filter (skip only when both sides have a timestamp)
         if our_start:
             api_ts = _api_game_unix_time(api_game)
@@ -428,24 +460,21 @@ def fetch_results_for_pending_games():
                     print(f"    Score: {home_score}-{away_score} (total: {total})")
                     print(f"    Match confidence: {score:.0%}")
 
-                    # Retag men/women using 1xBet team names + API-Basketball team names
+                    # Retag men/women using API-Basketball as authority
+                    # (match_game already filters by gender, so the API
+                    # game's league is the reliable signal)
                     our_league = game["league_name"] or ""
-                    home = game["home_team"] or ""
-                    away = game["away_team"] or ""
-                    api_home = (result.get("home_team") or "")
-                    api_away = (result.get("away_team") or "")
-                    teams_say_women = ("(Women)" in home or "(Wom" in home
-                                       or "(Women)" in away or "(Wom" in away
-                                       or api_home.endswith(" W") or api_away.endswith(" W"))
+                    api_women = _is_women_api(result)
+                    our_women = "women" in our_league.lower()
 
-                    if teams_say_women and "women" not in our_league.lower():
+                    if api_women and not our_women:
                         new_name = our_league + " Women"
                         conn.execute(
                             "UPDATE games SET league_name = ? WHERE id = ?",
                             (new_name, game["id"]),
                         )
                         print(f"    Retagged → {new_name}")
-                    elif not teams_say_women and "women" in our_league.lower():
+                    elif not api_women and our_women:
                         new_name = re.sub(r'\.?\s*Women$', '', our_league, flags=re.IGNORECASE).strip()
                         conn.execute(
                             "UPDATE games SET league_name = ? WHERE id = ?",
@@ -482,26 +511,11 @@ def retag_womens_leagues():
         print("  No games to check")
         return 0
 
-    # Skip games where 1xBet team names already agree with the league label
-    ambiguous = []
-    for row in rows:
-        our_league = row["league_name"] or ""
-        home = row["home_team"] or ""
-        away = row["away_team"] or ""
-        team_says_women = "(Women)" in home or "(Wom" in home or "(Women)" in away or "(Wom" in away
-        league_says_women = "women" in our_league.lower()
-        if team_says_women != league_says_women:
-            # Mismatch — team name retag can handle this without API
-            pass
-        else:
-            # Both agree OR both ambiguous (no marker either way) — need API to verify
-            ambiguous.append(row)
-
-    print(f"  {len(rows)} matched games, {len(ambiguous)} need API check (skipping {len(rows) - len(ambiguous)} already clear)...")
+    print(f"  {len(rows)} matched games to check...")
 
     retagged = 0
     with get_db() as conn:
-        for row in ambiguous:
+        for row in rows:
             api_game_id = row["api_game_id"]
 
             result = api_basketball_request("games", params={"id": str(api_game_id)})
@@ -592,6 +606,65 @@ def retag_by_team_names():
     return fixed + fixed2
 
 
+def fix_crossmatched_gender():
+    """
+    Delete game_results where a women's 1xBet game was matched to a men's
+    API-Basketball game (or vice versa). After this, re-run results_fetcher.py
+    to re-match with the gender-aware filter.
+    """
+    print("\n[FIX-GENDER] Finding cross-matched men/women results...")
+
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT g.id, g.league_name, g.home_team, g.away_team,
+                   gr.api_game_id, gr.home_score, gr.away_score
+            FROM games g
+            JOIN game_results gr ON g.id = gr.game_id
+            WHERE gr.api_game_id IS NOT NULL
+              AND (g.home_team LIKE '%(Women)%' OR g.home_team LIKE '%(Wom%'
+                   OR g.away_team LIKE '%(Women)%' OR g.away_team LIKE '%(Wom%')
+        """).fetchall()
+
+    if not rows:
+        print("  No games with (Women) markers found")
+        return 0
+
+    print(f"  Found {len(rows)} games with (Women) in team names, checking API...")
+
+    to_delete = []
+    for row in rows:
+        result = api_basketball_request("games", params={"id": str(row["api_game_id"])})
+        if not result or len(result) == 0:
+            continue
+
+        game_data = result[0]
+        api_league = game_data.get("league", {}).get("name", "")
+        api_home = game_data.get("teams", {}).get("home", {}).get("name", "")
+        api_away = game_data.get("teams", {}).get("away", {}).get("name", "")
+        api_women = ("women" in api_league.lower()
+                     or api_home.endswith(" W") or api_away.endswith(" W"))
+
+        if not api_women:
+            # 1xBet says women, API says men → cross-match
+            to_delete.append(row)
+            print(f"  [CROSSMATCH] {row['home_team']} vs {row['away_team']}")
+            print(f"    Score: {row['home_score']}-{row['away_score']}  API: {api_home} vs {api_away} ({api_league})")
+
+        time.sleep(0.1)
+
+    if not to_delete:
+        print("\n  No cross-matched results found")
+        return 0
+
+    print(f"\n  Deleting {len(to_delete)} cross-matched results...")
+    with get_db() as conn:
+        for row in to_delete:
+            conn.execute("DELETE FROM game_results WHERE game_id = ?", (row["id"],))
+
+    print(f"[FIX-GENDER] Deleted {len(to_delete)} wrong results. Re-run results_fetcher.py to re-match.")
+    return len(to_delete)
+
+
 # ============================================================
 # ENTRY POINTS
 # ============================================================
@@ -607,6 +680,9 @@ if __name__ == "__main__":
         print(f"\nFound {len(leagues)} leagues:\n")
         for lg in sorted(leagues, key=lambda x: x["country"]):
             print(f"  {lg['country']:<25} {lg['name']:<40} ID: {lg['id']}")
+
+    elif "--fix-gender" in sys.argv:
+        fix_crossmatched_gender()
 
     elif "--retag-api" in sys.argv:
         retag_womens_leagues()
