@@ -428,12 +428,15 @@ def fetch_results_for_pending_games():
                     print(f"    Score: {home_score}-{away_score} (total: {total})")
                     print(f"    Match confidence: {score:.0%}")
 
-                    # Retag men/women using team name markers (most reliable)
+                    # Retag men/women using 1xBet team names + API-Basketball team names
                     our_league = game["league_name"] or ""
                     home = game["home_team"] or ""
                     away = game["away_team"] or ""
+                    api_home = (result.get("home_team") or "")
+                    api_away = (result.get("away_team") or "")
                     teams_say_women = ("(Women)" in home or "(Wom" in home
-                                       or "(Women)" in away or "(Wom" in away)
+                                       or "(Women)" in away or "(Wom" in away
+                                       or api_home.endswith(" W") or api_away.endswith(" W"))
 
                     if teams_say_women and "women" not in our_league.lower():
                         new_name = our_league + " Women"
@@ -492,8 +495,12 @@ def retag_womens_leagues():
 
             game_data = result[0]
             api_league = game_data.get("league", {}).get("name", "")
+            api_home = game_data.get("teams", {}).get("home", {}).get("name", "")
+            api_away = game_data.get("teams", {}).get("away", {}).get("name", "")
             our_league = row["league_name"] or ""
-            is_api_women = "women" in api_league.lower()
+            # Check league name for "women" OR team names ending with " W" (API-Basketball convention)
+            is_api_women = ("women" in api_league.lower()
+                           or api_home.endswith(" W") or api_away.endswith(" W"))
             is_our_women = "women" in our_league.lower()
 
             if is_api_women and not is_our_women:
