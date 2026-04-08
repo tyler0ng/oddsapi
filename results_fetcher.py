@@ -472,7 +472,7 @@ def retag_womens_leagues():
 
     with get_db() as conn:
         rows = conn.execute("""
-            SELECT g.id, g.league_name, gr.api_game_id
+            SELECT g.id, g.league_name, g.home_team, g.away_team, gr.api_game_id
             FROM games g
             JOIN game_results gr ON g.id = gr.game_id
             WHERE gr.api_game_id IS NOT NULL
@@ -482,11 +482,26 @@ def retag_womens_leagues():
         print("  No games to check")
         return 0
 
-    print(f"  Checking {len(rows)} games against API-Basketball...")
+    # Skip games where 1xBet team names already agree with the league label
+    ambiguous = []
+    for row in rows:
+        our_league = row["league_name"] or ""
+        home = row["home_team"] or ""
+        away = row["away_team"] or ""
+        team_says_women = "(Women)" in home or "(Wom" in home or "(Women)" in away or "(Wom" in away
+        league_says_women = "women" in our_league.lower()
+        if team_says_women != league_says_women:
+            # Mismatch — team name retag can handle this without API
+            pass
+        else:
+            # Both agree OR both ambiguous (no marker either way) — need API to verify
+            ambiguous.append(row)
+
+    print(f"  {len(rows)} matched games, {len(ambiguous)} need API check (skipping {len(rows) - len(ambiguous)} already clear)...")
 
     retagged = 0
     with get_db() as conn:
-        for row in rows:
+        for row in ambiguous:
             api_game_id = row["api_game_id"]
 
             result = api_basketball_request("games", params={"id": str(api_game_id)})
@@ -520,7 +535,7 @@ def retag_womens_leagues():
                 retagged += 1
                 print(f"  [RETAGGED] {our_league} → {new_name} (api_game_id={api_game_id})")
 
-            time.sleep(0.5)  # Rate limit
+            time.sleep(0.1)  # Rate limit
 
     print(f"\n[RETAG] Updated {retagged} games")
     return retagged
