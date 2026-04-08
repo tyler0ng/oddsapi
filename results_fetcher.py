@@ -586,11 +586,11 @@ if __name__ == "__main__":
         for lg in sorted(leagues, key=lambda x: x["country"]):
             print(f"  {lg['country']:<25} {lg['name']:<40} ID: {lg['id']}")
 
-    elif "--retag" in sys.argv:
-        retag_by_team_names()
-
     elif "--retag-api" in sys.argv:
         retag_womens_leagues()
+
+    elif "--retag" in sys.argv:
+        retag_by_team_names()
 
     else:
         fetch_results_for_pending_games()
