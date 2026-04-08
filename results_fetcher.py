@@ -595,9 +595,10 @@ def retag_by_team_names():
 
 def fix_crossmatched_gender():
     """
-    Delete game_results where a women's 1xBet game was matched to a men's
-    API-Basketball game (or vice versa). After this, re-run results_fetcher.py
-    to re-match with the gender-aware filter.
+    Delete game_results where gender doesn't match between 1xBet and API:
+    - Women's 1xBet game (has "(Women)" markers) matched to men's API game
+    - Men's 1xBet game (no markers) matched to women's API game
+    After this, re-run results_fetcher.py to re-match correctly.
     """
     print("\n[FIX-GENDER] Finding cross-matched men/women results...")
 
@@ -608,15 +609,13 @@ def fix_crossmatched_gender():
             FROM games g
             JOIN game_results gr ON g.id = gr.game_id
             WHERE gr.api_game_id IS NOT NULL
-              AND (g.home_team LIKE '%(Women)%' OR g.home_team LIKE '%(Wom%'
-                   OR g.away_team LIKE '%(Women)%' OR g.away_team LIKE '%(Wom%')
         """).fetchall()
 
     if not rows:
-        print("  No games with (Women) markers found")
+        print("  No matched games found")
         return 0
 
-    print(f"  Found {len(rows)} games with (Women) in team names, checking API...")
+    print(f"  Checking {len(rows)} matched games against API...")
 
     to_delete = []
     for row in rows:
@@ -630,11 +629,12 @@ def fix_crossmatched_gender():
         api_away = game_data.get("teams", {}).get("away", {}).get("name", "")
         api_women = ("women" in api_league.lower()
                      or api_home.endswith(" W") or api_away.endswith(" W"))
+        xbet_women = _is_women_xbet(row["home_team"], row["away_team"])
 
-        if not api_women:
-            # 1xBet says women, API says men → cross-match
+        if api_women != xbet_women:
+            direction = "1xBet=women, API=men" if xbet_women else "1xBet=men, API=women"
             to_delete.append(row)
-            print(f"  [CROSSMATCH] {row['home_team']} vs {row['away_team']}")
+            print(f"  [CROSSMATCH] {row['home_team']} vs {row['away_team']}  ({direction})")
             print(f"    Score: {row['home_score']}-{row['away_score']}  API: {api_home} vs {api_away} ({api_league})")
 
         time.sleep(0.1)
