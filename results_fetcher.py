@@ -585,24 +585,11 @@ def retag_by_team_names():
 
         print(f"  Women's teams in non-women leagues: {fixed} fixed")
 
-        # Men's teams in women leagues
-        mens_in_womens = conn.execute("""
-            SELECT id, league_name, home_team, away_team FROM games
-            WHERE home_team NOT LIKE '%(Women)%' AND home_team NOT LIKE '%(Wom%'
-              AND away_team NOT LIKE '%(Women)%' AND away_team NOT LIKE '%(Wom%'
-              AND league_name LIKE '%Women%'
-        """).fetchall()
+        # Note: we do NOT strip "Women" from leagues when team names lack
+        # (Women) markers — 1xBet sometimes omits the marker on women's games.
+        # Only --retag-api (which checks the API) should demote a Women league.
 
-        fixed2 = 0
-        for row in mens_in_womens:
-            new_name = re.sub(r'\.?\s*Women$', '', row["league_name"], flags=re.IGNORECASE).strip()
-            conn.execute("UPDATE games SET league_name = ? WHERE id = ?",
-                         (new_name, row["id"]))
-            fixed2 += 1
-
-        print(f"  Men's teams in women leagues: {fixed2} fixed")
-
-    print(f"\n[RETAG] Total: {fixed + fixed2} games retagged")
+    print(f"\n[RETAG] Total: {fixed} games retagged")
     return fixed + fixed2
 
 
