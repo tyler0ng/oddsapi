@@ -175,8 +175,8 @@ def cmd_coverage(league=None):
         """
         params = []
         if league:
-            query += " WHERE g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-            params.append(league)
+            query += " WHERE g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+            params.extend([league, league])
         query += """
             GROUP BY g.id
             ORDER BY scrape_iterations DESC, g.first_seen DESC

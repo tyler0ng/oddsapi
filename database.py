@@ -406,8 +406,8 @@ def get_upcoming_games(conn, league_name=None):
     query = "SELECT * FROM games"
     params = []
     if league_name:
-        query += " WHERE league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        query += " WHERE league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
     query += " ORDER BY start_time ASC"
     return conn.execute(query, params).fetchall()
 
@@ -556,8 +556,8 @@ def get_closing_line_vs_result(conn, league_name=None):
     """
     params = []
     if league_name:
-        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     query += " ORDER BY gr.fetched_at DESC"
     return conn.execute(query, params).fetchall()
@@ -599,8 +599,8 @@ def get_closing_line_handicap_vs_result(conn, league_name=None):
     """
     params = []
     if league_name:
-        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     query += " ORDER BY gr.fetched_at DESC"
     return conn.execute(query, params).fetchall()
@@ -665,8 +665,8 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
     """
     params = []
     if league_name:
-        inner += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        inner += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     inner += """
         UNION ALL
@@ -717,8 +717,8 @@ def get_closing_team_totals_vs_result(conn, league_name=None, sort_order="league
           AND (SELECT COUNT(DISTINCT os3.scraped_at) FROM odds_snapshots os3 WHERE os3.game_id = g.id AND os3.market_group = 'Away Total' AND os3.market_type = 13) >= 3
     """
     if league_name:
-        inner += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        inner += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     query = f"SELECT * FROM ({inner}) ORDER BY {sort_order}"
     return conn.execute(query, params).fetchall()
@@ -795,8 +795,8 @@ def get_clv_analysis(conn, league_name=None):
     """
     params = []
     if league_name:
-        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     query += " ORDER BY ABS(closing.line - opening.line) DESC"
     return conn.execute(query, params).fetchall()
@@ -841,7 +841,7 @@ def get_league_ou_bias(conn):
         WHERE closing.line IS NOT NULL
           AND NOT ((gr.home_score = 20 AND gr.away_score = 0) OR (gr.home_score = 0 AND gr.away_score = 20))
           AND (SELECT COUNT(DISTINCT os3.scraped_at) FROM odds_snapshots os3 WHERE os3.game_id = g.id AND os3.market_group = 'Total' AND os3.market_type = 9) >= 3
-        GROUP BY g.league_id
+        GROUP BY g.league_id, (g.league_name LIKE '%Women%')
         HAVING total_games >= 3
         ORDER BY total_games DESC
     """).fetchall()
@@ -878,8 +878,8 @@ def get_hours_before_tipoff_patterns(conn, league_name=None):
     """
     params = []
     if league_name:
-        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        query += " AND g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     query += """
         )
@@ -913,8 +913,8 @@ def get_clock_hour_patterns(conn, league_name=None):
     """
     params = []
     if league_name:
-        query += " WHERE g.league_id IN (SELECT league_id FROM games WHERE league_name = ?)"
-        params.append(league_name)
+        query += " WHERE g.league_id IN (SELECT league_id FROM games WHERE league_name = ?) AND (g.league_name LIKE '%Women%') = (? LIKE '%Women%')"
+        params.extend([league_name, league_name])
 
     query += """
         GROUP BY hour_utc
@@ -941,7 +941,7 @@ def get_league_summary(conn):
         FROM games g
         LEFT JOIN odds_snapshots os ON os.game_id = g.id
         LEFT JOIN game_results gr   ON gr.game_id = g.id
-        GROUP BY g.league_id
+        GROUP BY g.league_id, (g.league_name LIKE '%Women%')
         ORDER BY total_games DESC
     """).fetchall()
 
